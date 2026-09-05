@@ -1,0 +1,488 @@
+-- ==============================================================================
+-- TYS ADMIN PANEL (С серверной синхронизацией тегов через Firebase)
+-- ==============================================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+if PlayerGui:FindFirstChild("TysAdminGui") then
+    PlayerGui.TysAdminGui:Destroy()
+end
+
+local FIREBASE_BASE = "https://tys-chat-8cfc2-default-rtdb.firebaseio.com"
+local FIREBASE_SECRET = "N2KgQL9bTL51nQOvNfYgr6fjfNpKwkp4NjMe0jKK"
+local httpRequest = request or http_request or (syn and syn.request) or (http and http.request)
+
+local function playClickSound()
+    pcall(function()
+        local sound = Instance.new("Sound")
+        sound.SoundId = "rbxassetid://9114221317"
+        sound.Volume = 0.25
+        sound.PlaybackSpeed = 1.2
+        sound.Parent = SoundService
+        sound:Play()
+        sound.Ended:Connect(function() sound:Destroy() end)
+    end)
+end
+
+-- ==============================================================================
+-- СИСТЕМА ОТОБРАЖЕНИЯ ТЕГОВ
+-- ==============================================================================
+local function createTag(head: Instance, role: string)
+    if head:FindFirstChild("TysOverheadTag") then
+        head.TysOverheadTag:Destroy()
+    end
+
+    local isAdmin = (role == "Admin")
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "TysOverheadTag"
+    billboard.Adornee = head
+    billboard.Size = isAdmin and UDim2.new(0, 130, 0, 32) or UDim2.new(0, 115, 0, 28)
+    billboard.StudsOffset = Vector3.new(0, isAdmin and 2.5 or 2.2, 0)
+    billboard.AlwaysOnTop = true
+    billboard.ResetOnSpawn = false
+    billboard.Parent = head
+
+    local tagFrame = Instance.new("Frame")
+    tagFrame.Size = UDim2.new(1, 0, 1, 0)
+    tagFrame.BackgroundColor3 = isAdmin and Color3.fromRGB(25, 10, 45) or Color3.fromRGB(18, 8, 32)
+    tagFrame.BackgroundTransparency = 0.2
+    tagFrame.BorderSizePixel = 0
+    tagFrame.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = tagFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = isAdmin and Color3.fromRGB(255, 200, 60) or Color3.fromRGB(170, 60, 255)
+    stroke.Thickness = isAdmin and 1.8 or 1.2
+    stroke.Parent = tagFrame
+
+    local tagText = Instance.new("TextLabel")
+    tagText.Size = UDim2.new(1, 0, 1, 0)
+    tagText.BackgroundTransparency = 1
+    tagText.Text = isAdmin and "👑 ADMIN" or "🌪️ USER"
+    tagText.Font = Enum.Font.GothamBold
+    tagText.TextSize = isAdmin and 12 or 10
+    tagText.TextColor3 = isAdmin and Color3.fromRGB(255, 220, 110) or Color3.fromRGB(230, 190, 255)
+    tagText.Parent = tagFrame
+end
+
+local playerRoles = {}
+
+if httpRequest then
+    task.spawn(function()
+        local myUserId = tostring(LocalPlayer.UserId)
+        local statusEndpoint = string.format("%s/users/%s.json?auth=%s", FIREBASE_BASE, myUserId, FIREBASE_SECRET)
+        local allUsersEndpoint = string.format("%s/users.json?auth=%s", FIREBASE_BASE, FIREBASE_SECRET)
+
+        while task.wait(2) do
+            -- Регистрируем себя как Admin
+            pcall(function()
+                httpRequest({
+                    Url = statusEndpoint,
+                    Method = "PATCH",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({
+                        name = LocalPlayer.Name,
+                        displayName = LocalPlayer.DisplayName,
+                        role = "Admin",
+                        lastSeen = os.time()
+                    })
+                })
+            end)
+
+            -- Загружаем роли всех игроков
+            local success, res = pcall(function()
+                return httpRequest({ Url = allUsersEndpoint, Method = "GET" })
+            end)
+
+            if success and res and res.Body and res.Body ~= "null" then
+                local ok, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+                if ok and type(data) == "table" then
+                    for uid, info in pairs(data) do
+                        if info.role then
+                            playerRoles[tostring(uid)] = info.role
+                        end
+                    end
+                end
+            end
+
+            -- Отрисовываем теги над всеми игроками в зоне видимости
+            for _, plr in ipairs(Players:GetPlayers()) do
+                local role = playerRoles[tostring(plr.UserId)]
+                if role and plr.Character then
+                    local head = plr.Character:FindFirstChild("Head")
+                    if head and not head:FindFirstChild("TysOverheadTag") then
+                        createTag(head, role)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ==============================================================================
+-- ИНТЕРФЕЙС АДМИН-ПАНЕЛИ
+-- ==============================================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TysAdminGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "AdminToggleButton"
+ToggleButton.Size = UDim2.new(0, 45, 0, 45)
+ToggleButton.Position = UDim2.new(0, 20, 0.5, -22)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(25, 12, 45)
+ToggleButton.BackgroundTransparency = 0.25
+ToggleButton.BorderColor3 = Color3.fromRGB(180, 60, 255)
+ToggleButton.BorderSizePixel = 2
+ToggleButton.Text = "👑"
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 20
+ToggleButton.TextColor3 = Color3.fromRGB(255, 215, 0)
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+ToggleButton.Parent = ScreenGui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = ToggleButton
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 500, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -250, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(14, 8, 24)
+MainFrame.BackgroundTransparency = 0.2
+MainFrame.BorderColor3 = Color3.fromRGB(160, 50, 255)
+MainFrame.BorderSizePixel = 1
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
+MainFrame.Visible = true
+MainFrame.Parent = ScreenGui
+
+local UICornerMain = Instance.new("UICorner")
+UICornerMain.CornerRadius = UDim.new(0, 10)
+UICornerMain.Parent = MainFrame
+
+local isMenuOpen = true
+local function toggleMenu()
+    playClickSound()
+    isMenuOpen = not isMenuOpen
+    if isMenuOpen then
+        MainFrame.Visible = true
+        MainFrame.Size = UDim2.new(0, 440, 0, 310)
+        TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 500, 0, 360),
+            BackgroundTransparency = 0.2
+        }):Play()
+    else
+        local tw = TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 440, 0, 310),
+            BackgroundTransparency = 1
+        })
+        tw:Play()
+        tw.Completed:Wait()
+        MainFrame.Visible = false
+    end
+end
+
+ToggleButton.MouseButton1Click:Connect(toggleMenu)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
+        toggleMenu()
+    end
+end)
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 38)
+TopBar.BackgroundColor3 = Color3.fromRGB(22, 10, 38)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 10)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -75, 1, 0)
+Title.Position = UDim2.new(0, 12, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "👑 TYS CLIENT — ADMIN CONTROL PANEL"
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 11
+Title.TextColor3 = Color3.fromRGB(235, 195, 255)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Parent = TopBar
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+MinimizeBtn.Position = UDim2.new(1, -62, 0, 5)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(35, 15, 60)
+MinimizeBtn.BackgroundTransparency = 0.5
+MinimizeBtn.Text = "—"
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 13
+MinimizeBtn.TextColor3 = Color3.fromRGB(220, 170, 255)
+MinimizeBtn.Parent = TopBar
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 5)
+MinCorner.Parent = MinimizeBtn
+MinimizeBtn.MouseButton1Click:Connect(toggleMenu)
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -32, 0, 5)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(70, 15, 30)
+CloseBtn.BackgroundTransparency = 0.5
+CloseBtn.Text = "✕"
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 12
+CloseBtn.TextColor3 = Color3.fromRGB(255, 150, 170)
+CloseBtn.Parent = TopBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 5)
+CloseCorner.Parent = CloseBtn
+CloseBtn.MouseButton1Click:Connect(function()
+    playClickSound()
+    ScreenGui:Destroy()
+end)
+
+local UserListContainer = Instance.new("Frame")
+UserListContainer.Size = UDim2.new(0, 215, 1, -50)
+UserListContainer.Position = UDim2.new(0, 10, 0, 44)
+UserListContainer.BackgroundColor3 = Color3.fromRGB(20, 10, 35)
+UserListContainer.BackgroundTransparency = 0.5
+UserListContainer.BorderColor3 = Color3.fromRGB(140, 50, 220)
+UserListContainer.BorderSizePixel = 1
+UserListContainer.Parent = MainFrame
+
+local UserCorner = Instance.new("UICorner")
+UserCorner.CornerRadius = UDim.new(0, 6)
+UserCorner.Parent = UserListContainer
+
+local UserScroll = Instance.new("ScrollingFrame")
+UserScroll.Size = UDim2.new(1, -8, 1, -38)
+UserScroll.Position = UDim2.new(0, 4, 0, 4)
+UserScroll.BackgroundTransparency = 1
+UserScroll.BorderSizePixel = 0
+UserScroll.ScrollBarThickness = 3
+UserScroll.ScrollBarImageColor3 = Color3.fromRGB(170, 60, 255)
+UserScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+UserScroll.Parent = UserListContainer
+
+local UserLayout = Instance.new("UIListLayout")
+UserLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UserLayout.Padding = UDim.new(0, 4)
+UserLayout.Parent = UserScroll
+
+local RefreshUsersBtn = Instance.new("TextButton")
+RefreshUsersBtn.Size = UDim2.new(1, -8, 0, 26)
+RefreshUsersBtn.Position = UDim2.new(0, 4, 1, -30)
+RefreshUsersBtn.BackgroundColor3 = Color3.fromRGB(45, 18, 75)
+RefreshUsersBtn.BorderColor3 = Color3.fromRGB(160, 60, 230)
+RefreshUsersBtn.BorderSizePixel = 1
+RefreshUsersBtn.Text = "🔄 Обновить юзеров"
+RefreshUsersBtn.Font = Enum.Font.GothamBold
+RefreshUsersBtn.TextSize = 9
+RefreshUsersBtn.TextColor3 = Color3.fromRGB(230, 200, 255)
+RefreshUsersBtn.Parent = UserListContainer
+
+local RefCorner = Instance.new("UICorner")
+RefCorner.CornerRadius = UDim.new(0, 4)
+RefCorner.Parent = RefreshUsersBtn
+
+local ActionContainer = Instance.new("Frame")
+ActionContainer.Size = UDim2.new(1, -245, 1, -50)
+ActionContainer.Position = UDim2.new(0, 235, 0, 44)
+ActionContainer.BackgroundColor3 = Color3.fromRGB(20, 10, 35)
+ActionContainer.BackgroundTransparency = 0.5
+ActionContainer.BorderColor3 = Color3.fromRGB(140, 50, 220)
+ActionContainer.BorderSizePixel = 1
+ActionContainer.Parent = MainFrame
+
+local ActCorner = Instance.new("UICorner")
+ActCorner.CornerRadius = UDim.new(0, 6)
+ActCorner.Parent = ActionContainer
+
+local TargetInfoLabel = Instance.new("TextLabel")
+TargetInfoLabel.Size = UDim2.new(1, -12, 0, 38)
+TargetInfoLabel.Position = UDim2.new(0, 6, 0, 6)
+TargetInfoLabel.BackgroundTransparency = 1
+TargetInfoLabel.Text = "🎯 Выберите юзера из списка слева"
+TargetInfoLabel.Font = Enum.Font.GothamBold
+TargetInfoLabel.TextSize = 10
+TargetInfoLabel.TextColor3 = Color3.fromRGB(230, 180, 255)
+TargetInfoLabel.Parent = ActionContainer
+
+local ActionButtonsFrame = Instance.new("Frame")
+ActionButtonsFrame.Size = UDim2.new(1, -12, 1, -52)
+ActionButtonsFrame.Position = UDim2.new(0, 6, 0, 48)
+ActionButtonsFrame.BackgroundTransparency = 1
+ActionButtonsFrame.Parent = ActionContainer
+
+local ActionGrid = Instance.new("UIGridLayout")
+ActionGrid.CellSize = UDim2.new(0.48, 0, 0, 34)
+ActionGrid.CellPadding = UDim2.new(0.04, 0, 0, 6)
+ActionGrid.Parent = ActionButtonsFrame
+
+local selectedTargetUserId = nil
+local selectedTargetName = nil
+
+local function sendCommandToUser(actionName: string)
+    if not selectedTargetUserId then
+        TargetInfoLabel.Text = "⚠️ Сначала выберите юзера!"
+        return
+    end
+
+    if not httpRequest then
+        TargetInfoLabel.Text = "⚠️ Эксплойт не поддерживает HTTP!"
+        return
+    end
+
+    playClickSound()
+    local url = string.format("%s/commands/%s.json?auth=%s", FIREBASE_BASE, tostring(selectedTargetUserId), FIREBASE_SECRET)
+    local uniqueCmdId = tostring(os.time()) .. "_" .. tostring(math.random(1000, 9999))
+
+    local commandData = {
+        action = actionName,
+        issuer = LocalPlayer.Name,
+        cmdId = uniqueCmdId,
+        timestamp = os.time()
+    }
+
+    if actionName == "bring" then
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
+        if myRoot then
+            local pos = myRoot.Position
+            local targetPos = pos + (myRoot.CFrame.LookVector * 3)
+            commandData.targetPos = { X = targetPos.X, Y = targetPos.Y, Z = targetPos.Z }
+        else
+            TargetInfoLabel.Text = "⚠️ Ваш персонаж не найден!"
+            return
+        end
+    end
+
+    local payload = HttpService:JSONEncode(commandData)
+
+    task.spawn(function()
+        local s, res = pcall(function()
+            return httpRequest({
+                Url = url,
+                Method = "PATCH",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = payload
+            })
+        end)
+
+        if s and res and (res.StatusCode == 200 or not res.StatusCode) then
+            TargetInfoLabel.Text = "Цель: " .. tostring(selectedTargetName) .. "\n[✅ Отправлено: " .. actionName:upper() .. "]"
+        else
+            TargetInfoLabel.Text = "⚠️ Ошибка отправки запроса"
+        end
+    end)
+end
+
+local function createActionButton(text: string, action: string, color: Color3)
+    local btn = Instance.new("TextButton")
+    btn.BackgroundColor3 = color
+    btn.BackgroundTransparency = 0.2
+    btn.BorderColor3 = Color3.fromRGB(200, 100, 255)
+    btn.BorderSizePixel = 1
+    btn.Text = text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 10
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Parent = ActionButtonsFrame
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 5)
+    corner.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        sendCommandToUser(action)
+    end)
+end
+
+createActionButton("🧲 BRING", "bring", Color3.fromRGB(180, 70, 20))
+createActionButton("💀 KILL", "kill", Color3.fromRGB(140, 20, 45))
+createActionButton("🚪 KICK", "kick", Color3.fromRGB(160, 50, 20))
+createActionButton("🧊 FREEZE", "freeze", Color3.fromRGB(20, 80, 150))
+createActionButton("🔥 UNFREEZE", "unfreeze", Color3.fromRGB(25, 120, 80))
+createActionButton("⛓️ JAIL", "jail", Color3.fromRGB(90, 30, 130))
+createActionButton("🔓 UNJAIL", "unjail", Color3.fromRGB(40, 110, 120))
+
+local function refreshUsers()
+    for _, ch in ipairs(UserScroll:GetChildren()) do
+        if ch:IsA("TextButton") then ch:Destroy() end
+    end
+
+    if not httpRequest then return end
+    local url = string.format("%s/users.json?auth=%s", FIREBASE_BASE, FIREBASE_SECRET)
+    task.spawn(function()
+        local s, res = pcall(function()
+            return httpRequest({ Url = url, Method = "GET" })
+        end)
+        if s and res and res.Body and res.Body ~= "null" then
+            local data = HttpService:JSONDecode(res.Body)
+            if type(data) == "table" then
+                local now = os.time()
+                for uid, info in pairs(data) do
+                    -- Показываем активных юзеров за последние 4 минуты (кроме самого себя)
+                    if info.lastSeen and (now - info.lastSeen < 240) and uid ~= tostring(LocalPlayer.UserId) then
+                        local userBtn = Instance.new("TextButton")
+                        userBtn.Size = UDim2.new(1, -4, 0, 28)
+                        userBtn.BackgroundColor3 = (selectedTargetUserId == uid) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
+                        userBtn.BackgroundTransparency = (selectedTargetUserId == uid) and 0.1 or 0.4
+                        userBtn.BorderColor3 = Color3.fromRGB(200, 100, 255)
+                        userBtn.BorderSizePixel = (selectedTargetUserId == uid) and 1 or 0
+                        userBtn.Text = "  " .. (info.displayName or info.name) .. " (@" .. info.name .. ")"
+                        userBtn.Font = Enum.Font.GothamMedium
+                        userBtn.TextSize = 9
+                        userBtn.TextColor3 = Color3.fromRGB(230, 200, 255)
+                        userBtn.TextXAlignment = Enum.TextXAlignment.Left
+                        userBtn.Parent = UserScroll
+
+                        local btnCorner = Instance.new("UICorner")
+                        btnCorner.CornerRadius = UDim.new(0, 4)
+                        btnCorner.Parent = userBtn
+
+                        userBtn.MouseButton1Click:Connect(function()
+                            playClickSound()
+                            selectedTargetUserId = tostring(uid)
+                            selectedTargetName = info.name
+                            TargetInfoLabel.Text = "🎯 Выбран:\n" .. info.name .. " (ID: " .. uid .. ")"
+                            for _, child in ipairs(UserScroll:GetChildren()) do
+                                if child:IsA("TextButton") then
+                                    child.BorderSizePixel = (child == userBtn) and 1 or 0
+                                    child.BackgroundColor3 = (child == userBtn) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+RefreshUsersBtn.MouseButton1Click:Connect(function()
+    playClickSound()
+    refreshUsers()
+end)
+
+refreshUsers()
