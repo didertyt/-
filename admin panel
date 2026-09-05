@@ -1,5 +1,5 @@
 -- ==============================================================================
--- TYS ADMIN PANEL (С серверной синхронизацией тегов через Firebase)
+-- TYS ADMIN PANEL (С серверной синхронизацией тегов и активных юзеров через Firebase)
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -95,6 +95,8 @@ if httpRequest then
                         name = LocalPlayer.Name,
                         displayName = LocalPlayer.DisplayName,
                         role = "Admin",
+                        jobId = game.JobId,
+                        placeId = game.PlaceId,
                         lastSeen = os.time()
                     })
                 })
@@ -426,53 +428,75 @@ createActionButton("🔥 UNFREEZE", "unfreeze", Color3.fromRGB(25, 120, 80))
 createActionButton("⛓️ JAIL", "jail", Color3.fromRGB(90, 30, 130))
 createActionButton("🔓 UNJAIL", "unjail", Color3.fromRGB(40, 110, 120))
 
+-- ==============================================================================
+-- ОБНОВЛЕНИЕ СПИСКА ИГРОКОВ В РЕАЛЬНОМ ВРЕМЕНИ (СЕРВЕРНАЯ ПРОВЕРКА)
+-- ==============================================================================
 local function refreshUsers()
-    for _, ch in ipairs(UserScroll:GetChildren()) do
-        if ch:IsA("TextButton") then ch:Destroy() end
-    end
-
     if not httpRequest then return end
     local url = string.format("%s/users.json?auth=%s", FIREBASE_BASE, FIREBASE_SECRET)
+
     task.spawn(function()
         local s, res = pcall(function()
             return httpRequest({ Url = url, Method = "GET" })
         end)
+
         if s and res and res.Body and res.Body ~= "null" then
             local data = HttpService:JSONDecode(res.Body)
             if type(data) == "table" then
                 local now = os.time()
+
+                for _, ch in ipairs(UserScroll:GetChildren()) do
+                    if ch:IsA("TextButton") then ch:Destroy() end
+                end
+
                 for uid, info in pairs(data) do
-                    -- Показываем активных юзеров за последние 4 минуты (кроме самого себя)
-                    if info.lastSeen and (now - info.lastSeen < 240) and uid ~= tostring(LocalPlayer.UserId) then
-                        local userBtn = Instance.new("TextButton")
-                        userBtn.Size = UDim2.new(1, -4, 0, 28)
-                        userBtn.BackgroundColor3 = (selectedTargetUserId == uid) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
-                        userBtn.BackgroundTransparency = (selectedTargetUserId == uid) and 0.1 or 0.4
-                        userBtn.BorderColor3 = Color3.fromRGB(200, 100, 255)
-                        userBtn.BorderSizePixel = (selectedTargetUserId == uid) and 1 or 0
-                        userBtn.Text = "  " .. (info.displayName or info.name) .. " (@" .. info.name .. ")"
-                        userBtn.Font = Enum.Font.GothamMedium
-                        userBtn.TextSize = 9
-                        userBtn.TextColor3 = Color3.fromRGB(230, 200, 255)
-                        userBtn.TextXAlignment = Enum.TextXAlignment.Left
-                        userBtn.Parent = UserScroll
+                    local lastPing = tonumber(info.lastSeen) or 0
+                    local isExpired = (now - lastPing) > 6 -- Если не пингует дольше 6 секунд
 
-                        local btnCorner = Instance.new("UICorner")
-                        btnCorner.CornerRadius = UDim.new(0, 4)
-                        btnCorner.Parent = userBtn
-
-                        userBtn.MouseButton1Click:Connect(function()
-                            playClickSound()
-                            selectedTargetUserId = tostring(uid)
-                            selectedTargetName = info.name
-                            TargetInfoLabel.Text = "🎯 Выбран:\n" .. info.name .. " (ID: " .. uid .. ")"
-                            for _, child in ipairs(UserScroll:GetChildren()) do
-                                if child:IsA("TextButton") then
-                                    child.BorderSizePixel = (child == userBtn) and 1 or 0
-                                    child.BackgroundColor3 = (child == userBtn) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
-                                end
-                            end
+                    -- Если вышел из игры / закрыл хаб / перешел в другую игру — стираем
+                    if isExpired then
+                        pcall(function()
+                            httpRequest({
+                                Url = string.format("%s/users/%s.json?auth=%s", FIREBASE_BASE, tostring(uid), FIREBASE_SECRET),
+                                Method = "DELETE"
+                            })
                         end)
+                    elseif uid ~= tostring(LocalPlayer.UserId) then
+                        -- Проверка: находится ли игрок на том же сервере
+                        local onSameServer = (info.jobId == game.JobId)
+
+                        -- Показываем только тех, кто активировал хаб и сидит на твоем сервере
+                        if onSameServer then
+                            local userBtn = Instance.new("TextButton")
+                            userBtn.Size = UDim2.new(1, -4, 0, 28)
+                            userBtn.BackgroundColor3 = (selectedTargetUserId == uid) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
+                            userBtn.BackgroundTransparency = (selectedTargetUserId == uid) and 0.1 or 0.4
+                            userBtn.BorderColor3 = Color3.fromRGB(200, 100, 255)
+                            userBtn.BorderSizePixel = (selectedTargetUserId == uid) and 1 or 0
+                            userBtn.Text = " 🟢 " .. (info.displayName or info.name) .. " (@" .. info.name .. ")"
+                            userBtn.Font = Enum.Font.GothamMedium
+                            userBtn.TextSize = 9
+                            userBtn.TextColor3 = Color3.fromRGB(230, 200, 255)
+                            userBtn.TextXAlignment = Enum.TextXAlignment.Left
+                            userBtn.Parent = UserScroll
+
+                            local btnCorner = Instance.new("UICorner")
+                            btnCorner.CornerRadius = UDim.new(0, 4)
+                            btnCorner.Parent = userBtn
+
+                            userBtn.MouseButton1Click:Connect(function()
+                                playClickSound()
+                                selectedTargetUserId = tostring(uid)
+                                selectedTargetName = info.name
+                                TargetInfoLabel.Text = "🎯 Выбран:\n" .. info.name .. " (ID: " .. uid .. ")"
+                                for _, child in ipairs(UserScroll:GetChildren()) do
+                                    if child:IsA("TextButton") then
+                                        child.BorderSizePixel = (child == userBtn) and 1 or 0
+                                        child.BackgroundColor3 = (child == userBtn) and Color3.fromRGB(80, 30, 135) or Color3.fromRGB(35, 18, 55)
+                                    end
+                                end
+                            end)
+                        end
                     end
                 end
             end
@@ -483,6 +507,13 @@ end
 RefreshUsersBtn.MouseButton1Click:Connect(function()
     playClickSound()
     refreshUsers()
+end)
+
+-- Фоновое авто-обновление каждые 3 секунды
+task.spawn(function()
+    while task.wait(3) do
+        refreshUsers()
+    end
 end)
 
 refreshUsers()
