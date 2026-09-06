@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Tys Admin Hub v8 by Viq (Mobile Touch & Click Fixed)
+-- Tys Admin Hub v8 by Viq (Fixed Buttons Click & Touch)
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -15,7 +15,6 @@ if PlayerGui:FindFirstChild("TysAdminGui") then
     PlayerGui.TysAdminGui:Destroy()
 end
 
--- Конфигурация Firebase
 local FIREBASE_BASE = "https://tys-chat-8cfc2-default-rtdb.firebaseio.com"
 local FIREBASE_SECRET = "N2KgQL9bTL51nQOvNfYgr6fjfNpKwkp4NjMe0jKK"
 local PRESENCE_ENDPOINT = string.format("%s/active_users.json?auth=%s", FIREBASE_BASE, FIREBASE_SECRET)
@@ -40,26 +39,31 @@ local function playClickSound()
     playSound("rbxassetid://9114221317", 0.25, 1.2)
 end
 
--- Универсальный бинд клика и тапа
+-- Жесткий универсальный бинд для ПК и Телефона
 local function bindButton(btn, callback)
     btn.Active = true
     btn.Selectable = true
-    local lastTrigger = 0
-    local function execute()
-        local now = tick()
-        if now - lastTrigger > 0.2 then
-            lastTrigger = now
-            callback()
-        end
+    local debounce = false
+    
+    local function trigger()
+        if debounce then return end
+        debounce = true
+        callback()
+        task.wait(0.25)
+        debounce = false
     end
-    btn.Activated:Connect(execute)
-    btn.MouseButton1Click:Connect(execute)
+
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            trigger()
+        end
+    end)
 end
 
--- Создание GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TysAdminGui"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999999
 ScreenGui.Parent = PlayerGui
 
 local uiScale = Instance.new("UIScale")
@@ -76,7 +80,7 @@ local NotificationContainer = Instance.new("Frame")
 NotificationContainer.Size = UDim2.new(0, 260, 1, -20)
 NotificationContainer.Position = UDim2.new(1, -270, 0, 10)
 NotificationContainer.BackgroundTransparency = 1
-NotificationContainer.ZIndex = 100
+NotificationContainer.ZIndex = 500
 NotificationContainer.Parent = ScreenGui
 
 local NotifLayout = Instance.new("UIListLayout")
@@ -93,7 +97,7 @@ local function sendNotification(message, duration)
     notif.BackgroundTransparency = 1
     notif.BorderColor3 = Color3.fromRGB(170, 60, 255)
     notif.BorderSizePixel = 1
-    notif.ZIndex = 101
+    notif.ZIndex = 501
     notif.Parent = NotificationContainer
 
     local notifCorner = Instance.new("UICorner")
@@ -104,7 +108,7 @@ local function sendNotification(message, duration)
     notifText.Size = UDim2.new(1, -15, 1, 0)
     notifText.Position = UDim2.new(0, 15, 0, 0)
     notifText.BackgroundTransparency = 1
-    notifText.ZIndex = 102
+    notifText.ZIndex = 502
     notifText.Text = "🔮 " .. message
     notifText.Font = Enum.Font.GothamBold
     notifText.TextSize = 11
@@ -124,7 +128,7 @@ local function sendNotification(message, duration)
     end)
 end
 
--- Кнопка сворачивания с поддержкой мобильного перетаскивания
+-- Кнопка сворачивания
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Name = "AdminToggleButton"
 ToggleButton.Size = UDim2.new(0, 45, 0, 45)
@@ -138,8 +142,7 @@ ToggleButton.Font = Enum.Font.GothamBold
 ToggleButton.TextSize = 20
 ToggleButton.TextColor3 = Color3.fromRGB(220, 160, 255)
 ToggleButton.Active = true
-ToggleButton.Selectable = true
-ToggleButton.ZIndex = 200
+ToggleButton.ZIndex = 300
 ToggleButton.Parent = ScreenGui
 
 local ToggleCorner = Instance.new("UICorner")
@@ -155,7 +158,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(12, 8, 20)
 MainFrame.BackgroundTransparency = 0.35
 MainFrame.BorderColor3 = Color3.fromRGB(140, 50, 255)
 MainFrame.BorderSizePixel = 1
-MainFrame.Active = true
+MainFrame.Active = false
 MainFrame.ClipsDescendants = true
 MainFrame.Visible = false
 MainFrame.ZIndex = 10
@@ -165,7 +168,7 @@ local UICornerMain = Instance.new("UICorner")
 UICornerMain.CornerRadius = UDim.new(0, 10)
 UICornerMain.Parent = MainFrame
 
--- Кастомное перетаскивание плавающей кнопки (ПК + Тачскрин)
+-- Перетаскивание кнопки (ПК + Тач)
 do
     local dragging = false
     local dragInput, dragStart, startPos
@@ -292,12 +295,13 @@ local PagesContainer = Instance.new("Frame")
 PagesContainer.Size = UDim2.new(1, -145, 1, -50)
 PagesContainer.Position = UDim2.new(0, 135, 0, 45)
 PagesContainer.BackgroundTransparency = 1
+PagesContainer.Active = false
 PagesContainer.ZIndex = 11
 PagesContainer.Parent = MainFrame
 
 local Pages = {
-    Users = Instance.new("ScrollingFrame"),
-    Jumpscares = Instance.new("ScrollingFrame")
+    Users = Instance.new("Frame"),
+    Jumpscares = Instance.new("Frame")
 }
 
 for name, page in pairs(Pages) do
@@ -305,19 +309,10 @@ for name, page in pairs(Pages) do
     page.Size = UDim2.new(1, 0, 1, 0)
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
+    page.Active = false
     page.ZIndex = 12
     page.Visible = (name == "Users")
-    page.CanvasSize = UDim2.new(0, 0, 0, 0)
-    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    page.ScrollBarThickness = 5
-    page.ScrollBarImageColor3 = Color3.fromRGB(170, 60, 255)
-    page.ScrollingEnabled = true
     page.Parent = PagesContainer
-
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 6)
-    layout.Parent = page
 end
 
 local tabButtons = {}
@@ -348,7 +343,7 @@ local function createSidebarTab(name, text)
     btn.BackgroundTransparency = (name == "Users") and 0.1 or 0.5
     btn.BorderColor3 = Color3.fromRGB(255, 100, 255)
     btn.BorderSizePixel = (name == "Users") and 2 or 0
-    btn.ZIndex = 13
+    btn.ZIndex = 15
     btn.Text = text
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 10
@@ -369,7 +364,6 @@ end
 createSidebarTab("Users", "👤 Юзеры хаба")
 createSidebarTab("Jumpscares", "👻 Jumpscares")
 
--- Отправка команд в Firebase
 local function sendRemoteCommand(cmdType, targetUserId, extraArgs)
     if not httpRequest then
         sendNotification("⚠️ Эксплойт не поддерживает HTTP!", 3)
@@ -377,7 +371,6 @@ local function sendRemoteCommand(cmdType, targetUserId, extraArgs)
     end
 
     local endpoint = string.format("%s/targets/%d.json?auth=%s", FIREBASE_BASE, targetUserId, FIREBASE_SECRET)
-
     local payloadData = {
         command = cmdType,
         sender = LocalPlayer.Name,
@@ -412,8 +405,9 @@ local adminUserRows = {}
 
 local UsersHeader = Instance.new("TextLabel")
 UsersHeader.Size = UDim2.new(1, -8, 0, 20)
+UsersHeader.Position = UDim2.new(0, 0, 0, 0)
 UsersHeader.BackgroundTransparency = 1
-UsersHeader.ZIndex = 13
+UsersHeader.ZIndex = 14
 UsersHeader.Text = "🟢 АКТИВНЫЕ ЮЗЕРЫ TYS HUB (В СЕТИ):"
 UsersHeader.Font = Enum.Font.GothamBold
 UsersHeader.TextSize = 11
@@ -423,11 +417,13 @@ UsersHeader.Parent = UsersPage
 
 local UsersListContainer = Instance.new("Frame")
 UsersListContainer.Size = UDim2.new(1, -8, 0, 130)
+UsersListContainer.Position = UDim2.new(0, 0, 0, 22)
 UsersListContainer.BackgroundColor3 = Color3.fromRGB(25, 12, 45)
 UsersListContainer.BackgroundTransparency = 0.6
 UsersListContainer.BorderSizePixel = 0
 UsersListContainer.ClipsDescendants = true
-UsersListContainer.ZIndex = 13
+UsersListContainer.Active = false
+UsersListContainer.ZIndex = 14
 UsersListContainer.Parent = UsersPage
 
 local UsersListCorner = Instance.new("UICorner")
@@ -444,8 +440,8 @@ UsersScrolling.ScrollBarThickness = 5
 UsersScrolling.ScrollBarImageColor3 = Color3.fromRGB(170, 60, 255)
 UsersScrolling.AutomaticCanvasSize = Enum.AutomaticSize.Y
 UsersScrolling.ScrollingEnabled = true
-UsersScrolling.Active = true
-UsersScrolling.ZIndex = 14
+UsersScrolling.Active = false
+UsersScrolling.ZIndex = 15
 UsersScrolling.Parent = UsersListContainer
 
 local UsersLayout = Instance.new("UIListLayout")
@@ -483,7 +479,7 @@ local function refreshOnlineHubUsers()
     end
 
     for _, child in ipairs(UsersScrolling:GetChildren()) do
-        if child:IsA("TextButton") then child:Destroy() end
+        if child:IsA("TextButton") or child:IsA("TextLabel") then child:Destroy() end
     end
     table.clear(adminUserRows)
 
@@ -492,7 +488,7 @@ local function refreshOnlineHubUsers()
         emptyLabel.Name = "EmptyLabel"
         emptyLabel.Size = UDim2.new(1, 0, 0, 30)
         emptyLabel.BackgroundTransparency = 1
-        emptyLabel.ZIndex = 15
+        emptyLabel.ZIndex = 16
         emptyLabel.Text = "⏳ Нет активных юзеров хаба на сервере..."
         emptyLabel.Font = Enum.Font.GothamMedium
         emptyLabel.TextSize = 10
@@ -509,7 +505,7 @@ local function refreshOnlineHubUsers()
         btn.BackgroundTransparency = isSelected and 0.1 or 0.5
         btn.BorderColor3 = Color3.fromRGB(255, 100, 255)
         btn.BorderSizePixel = isSelected and 2 or 0
-        btn.ZIndex = 15
+        btn.ZIndex = 25
         btn.Text = "  🟢 " .. user.name .. " (@" .. user.displayName .. ")"
         btn.Font = isSelected and Enum.Font.GothamBold or Enum.Font.GothamMedium
         btn.TextSize = 10
@@ -554,8 +550,10 @@ end)
 -- Сетка кнопок действий
 local ActionsGrid = Instance.new("Frame")
 ActionsGrid.Size = UDim2.new(1, -8, 0, 150)
+ActionsGrid.Position = UDim2.new(0, 0, 0, 160)
 ActionsGrid.BackgroundTransparency = 1
-ActionsGrid.ZIndex = 13
+ActionsGrid.Active = false
+ActionsGrid.ZIndex = 14
 ActionsGrid.Parent = UsersPage
 
 local GridLayout = Instance.new("UIGridLayout")
@@ -569,7 +567,7 @@ local function createAdminActionBtn(text, cmdName, colorTheme)
     btn.BackgroundTransparency = 0.2
     btn.BorderColor3 = Color3.fromRGB(180, 80, 255)
     btn.BorderSizePixel = 1
-    btn.ZIndex = 14
+    btn.ZIndex = 30
     btn.Text = text
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 10
@@ -616,8 +614,9 @@ local JumpscaresPage = Pages.Jumpscares
 
 local JumpscareHeader = Instance.new("TextLabel")
 JumpscareHeader.Size = UDim2.new(1, -8, 0, 20)
+JumpscareHeader.Position = UDim2.new(0, 0, 0, 0)
 JumpscareHeader.BackgroundTransparency = 1
-JumpscareHeader.ZIndex = 13
+JumpscareHeader.ZIndex = 14
 JumpscareHeader.Text = "👻 ДИСТАНЦИОННЫЕ СКРИМЕРЫ:"
 JumpscareHeader.Font = Enum.Font.GothamBold
 JumpscareHeader.TextSize = 11
@@ -627,11 +626,13 @@ JumpscareHeader.Parent = JumpscaresPage
 
 local JumpscareCard = Instance.new("Frame")
 JumpscareCard.Size = UDim2.new(1, -8, 0, 120)
+JumpscareCard.Position = UDim2.new(0, 0, 0, 25)
 JumpscareCard.BackgroundColor3 = Color3.fromRGB(25, 12, 45)
 JumpscareCard.BackgroundTransparency = 0.5
 JumpscareCard.BorderColor3 = Color3.fromRGB(140, 50, 255)
 JumpscareCard.BorderSizePixel = 1
-JumpscareCard.ZIndex = 13
+JumpscareCard.Active = false
+JumpscareCard.ZIndex = 14
 JumpscareCard.Parent = JumpscaresPage
 
 local JSCorner = Instance.new("UICorner")
@@ -644,7 +645,7 @@ PreviewImage.Position = UDim2.new(0, 10, 0, 10)
 PreviewImage.BackgroundColor3 = Color3.fromRGB(15, 8, 25)
 PreviewImage.BorderColor3 = Color3.fromRGB(170, 60, 255)
 PreviewImage.BorderSizePixel = 1
-PreviewImage.ZIndex = 14
+PreviewImage.ZIndex = 15
 PreviewImage.Image = "rbxassetid://101456161393973"
 PreviewImage.ScaleType = Enum.ScaleType.Fit
 PreviewImage.Parent = JumpscareCard
@@ -657,7 +658,7 @@ local JSTitle = Instance.new("TextLabel")
 JSTitle.Size = UDim2.new(1, -125, 0, 20)
 JSTitle.Position = UDim2.new(0, 120, 0, 10)
 JSTitle.BackgroundTransparency = 1
-JSTitle.ZIndex = 14
+JSTitle.ZIndex = 15
 JSTitle.Text = "67 Jumpscare"
 JSTitle.Font = Enum.Font.GothamBold
 JSTitle.TextSize = 12
@@ -669,7 +670,7 @@ local JSDesc = Instance.new("TextLabel")
 JSDesc.Size = UDim2.new(1, -125, 0, 32)
 JSDesc.Position = UDim2.new(0, 120, 0, 30)
 JSDesc.BackgroundTransparency = 1
-JSDesc.ZIndex = 14
+JSDesc.ZIndex = 15
 JSDesc.Text = "Вызывает моментальный полноэкранный скример с криком на экране выбранного юзера."
 JSDesc.Font = Enum.Font.GothamMedium
 JSDesc.TextSize = 9
@@ -685,7 +686,7 @@ SendJSBtn.BackgroundColor3 = Color3.fromRGB(140, 20, 60)
 SendJSBtn.BackgroundTransparency = 0.2
 SendJSBtn.BorderColor3 = Color3.fromRGB(255, 60, 120)
 SendJSBtn.BorderSizePixel = 1
-SendJSBtn.ZIndex = 15
+SendJSBtn.ZIndex = 30
 SendJSBtn.Text = "⚡ ЗАПУСТИТЬ 67 JUMPSCARE"
 SendJSBtn.Font = Enum.Font.GothamBold
 SendJSBtn.TextSize = 10
