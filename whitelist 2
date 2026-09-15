@@ -1,5 +1,4 @@
 return {
-    "ABUGEZAN",
-    "roblox_user_7617259586",
-    "xd"
+    ["ABUGEZAN"] = true,
+    ["roblox_user_7617259586"] = true
 }
